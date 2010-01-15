@@ -1,5 +1,23 @@
 #!/usr/bin/perl
 
+=head1 SYNOPSIS
+
+perl convert.pl base-uri
+
+base-uri should be the base URI used in constructing linked-data capable
+instance URIs. It will be appended with fragments starting with '/', so it
+should not end with a slash.
+
+Example:
+
+ perl convert.pl http://myrdf.us/mta/mnr
+
+This will create RDF with URIs such as:
+
+ http://myrdf.us/mta/mnr/stop/grand_central_terminal
+
+=cut
+
 use strict;
 use warnings;
 
@@ -7,12 +25,25 @@ use Data::Dumper;
 use Error qw(:try);
 
 unless (@ARGV) {
-	print "Usage: $0 dataset_name\n\n";
+	print <<"END";
+Usage: $0 base-uri
+
+base-uri should be the base URI used in constructing linked-data capable
+instance URIs. It will be appended with fragments starting with '/', so it
+should not end with a slash.
+
+Example:
+
+perl $0 http://myrdf.us/mta/mnr
+
+This will create RDF with URIs such as:
+http://myrdf.us/mta/mnr/stop/grand_central_terminal
+
+END
 	exit;
 }
 
-my $type	= shift;
-my $base	= "http://myrdf.us/mta/$type";
+my $base	= shift;
 my $m		= MTA->new({base => $base});
 
 $m->run();
