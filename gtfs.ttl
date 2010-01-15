@@ -1,0 +1,140 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix gtfs: <http://myrdf.us/gtfs/vocab/> .
+
+gtfs:arrival_time a rdf:Property ;
+	rdfs:label "Arrival Time" .
+
+gtfs:departure_time a rdf:Property ;
+	rdfs:label "Departure Time" .
+
+gtfs:end_date a rdf:Property ;
+	rdfs:label "End Date" .
+
+gtfs:friday a rdf:Property ;
+	rdfs:label "Friday" .
+
+gtfs:monday a rdf:Property ;
+	rdfs:label "Monday" .
+
+gtfs:route_id a rdf:Property ;
+	rdfs:label "Route ID" .
+
+gtfs:route_type a rdf:Property ;
+	rdfs:label "Route Type" .
+
+gtfs:route a rdf:Property ;
+	rdfs:domain gtfs:Trip ;
+	rdfs:range gtfs:Route ;
+	owl:inverseOf gtfs:has_trip ;
+	rdfs:label "Route" .
+
+gtfs:saturday a rdf:Property ;
+	rdfs:label "Saturday" .
+
+gtfs:service_id a rdf:Property ;
+	rdfs:label "Service ID" .
+
+gtfs:start_date a rdf:Property ;
+	rdfs:label "Start Date" .
+
+gtfs:stop_sequence a rdf:Property ;
+	rdfs:label "Stop Sequence" .
+
+gtfs:stop a rdf:Property ;
+	rdfs:label "Stop" .
+
+gtfs:sunday a rdf:Property ;
+	rdfs:label "Sunday" .
+
+gtfs:thursday a rdf:Property ;
+	rdfs:label "Thursday" .
+
+gtfs:timezone a rdf:Property ;
+	rdfs:label "Timezone" .
+
+gtfs:trip_headsign a rdf:Property ;
+	rdfs:label "Trip Headsign" .
+
+gtfs:trip_id a rdf:Property ;
+	rdfs:label "Trip ID" .
+
+gtfs:trip a rdf:Property ;
+	rdfs:domain gtfs:StopTime ;
+	rdfs:range gtfs:Trip ;
+	rdfs:label "Trip" ;
+	dc:description "Relates a StopTime with its Trip." .
+
+gtfs:has_route a rdf:Property ;
+	rdfs:domain gtfs:Stop ;
+	rdfs:range gtfs:Route ;
+	rdfs:label "Has Route" ;
+	owl:inverseOf gtfs:has_stop ;
+	dc:description "Relates a Stop with a Route that passes through it." .
+
+gtfs:has_stop a rdf:Property ;
+	rdfs:domain gtfs:Route ;
+	rdfs:range gtfs:Stop ;
+	rdfs:label "Has Stop" ;
+	owl:inverseOf gtfs:has_route ;
+	dc:description "Relates a Route with a Stop along it." .
+
+gtfs:has_stoptimes a rdf:Property ;
+	rdfs:domain gtfs:Trip ;
+	rdfs:label "Has StopTimes" ;
+	dc:description "Relates a Trip with the sequence of its StopTimes." .
+
+gtfs:has_trip a rdf:Property ;
+	rdfs:domain gtfs:Route ;
+	rdfs:range gtfs:Trip ;
+	rdfs:label "Has Trip" ;
+	owl:inverseOf gtfs:route ;
+	dc:description "Relates a Route with a Trip that travels it." .
+
+gtfs:tuesday a rdf:Property ;
+	rdfs:label "Tuesday" .
+
+gtfs:wednesday a rdf:Property ;
+	rdfs:label "Wednesday" .
+
+gtfs:RouteType a rdfs:Class .
+
+gtfs:LightRail a gtfs:RouteType ;
+	rdfs:label "Tram, Streetcar, Light rail" ;
+	dc:description "Any light rail or street level system within a metropolitan area." .
+gtfs:Subway a gtfs:RouteType ;
+	rdfs:label "Subway, Metro" ;
+	dc:description "Any underground rail system within a metropolitan area." .
+gtfs:Rail a gtfs:RouteType ;
+	rdfs:label "Rail" ;
+	dc:description "Used for intercity or long-distance travel." .
+gtfs:Bus a gtfs:RouteType ;
+	rdfs:label "Bus" ;
+	dc:description "Used for short- and long-distance bus routes." .
+gtfs:Ferry a gtfs:RouteType ;
+	rdfs:label "Ferry" ;
+	dc:description "Used for short- and long-distance boat service." .
+gtfs:CableCar a gtfs:RouteType ;
+	rdfs:label "Cable car" ;
+	dc:description "Used for street-level cable cars where the cable runs beneath the car." .
+gtfs:Gondola a gtfs:RouteType ;
+	rdfs:label "Gondola, Suspended cable car" ;
+	dc:description "Typically used for aerial cable cars where the car is suspended from the cable." .
+gtfs:Funicular a gtfs:RouteType ;
+	rdfs:label "Funicular" ;
+	dc:description "Any rail system designed for steep inclines." .
+
+gtfs:Agency a rdfs:Class ;
+	rdfs:label "Agency" .
+gtfs:Route a rdfs:Class ;
+	rdfs:label "Route" .
+gtfs:Service a rdfs:Class ;
+	rdfs:label "Service" .
+gtfs:Stop a rdfs:Class ;
+	rdfs:label "Stop" .
+gtfs:StopTime a rdfs:Class ;
+	rdfs:label "StopTime" .
+gtfs:Trip a rdfs:Class ;
+	rdfs:label "Trip" .
