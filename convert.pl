@@ -255,6 +255,11 @@ sub emit_routes {
 END
 	print qq[\tdc:title "$short" ;\n] if ($short);
 	print qq[\tdc:description "$long" ;\n] if ($long);
+
+	if (my $url = $row{ 'route_url' }) {
+		print qq[\tfoaf:homepage <$url> ;];
+	}
+
 	print qq[\t.\n\n];
 }
 
@@ -329,9 +334,8 @@ sub emit_stops {
 	geo:long $lon ;
 END
 	
-	foreach my $rid (keys %{ $self->{stop_routes}{$sid} }) {
-		my $ruri	= $self->{stop_routes}{$sid}{$rid};
-		print qq[\t:has_route];
+	if (my $url = $row{ 'stop_url' }) {
+		print qq[\tfoaf:homepage <$url> ;];
 	}
 	
 	print qq[\t.\n\n];
