@@ -31,14 +31,16 @@ unless (@ARGV) {
 }
 
 my ($lic, $base, $source);
+my $output	= '-';
 my $split	= 0;
-my $output	= 'turtle';
+my $format	= 'turtle';
 my $result	= GetOptions(
 				"base=s"	=> \$base,
 				"license=s"	=> \$lic,
 				"source=s"	=> \$source,
-				"output=s"	=> \$output,
+				"format=s"	=> \$format,
 				"split_size=i"	=> \$split,
+				"output=s"	=> \$output,
 			);
 
 my %args;
@@ -52,9 +54,10 @@ if ($base) {
 $args{license}	= $lic if ($lic);
 $args{source}	= $source if ($source);
 $args{split_size}	= $split if ($split);
-$args{output}	= $output;
+$args{'format'}	= $format;
+$args{'output'}	= $output;
 
-my $m		= MTA->new({%args});
+my $m		= GTFS->new({%args});
 
 $m->run();
 
@@ -82,23 +85,24 @@ END
 ################################################################################
 
 
-package MTA;
+package GTFS;
 
 use strict;
 use warnings;
 use base qw(Class::Accessor);
 
+use Carp;
 use Text::CSV;
 use Data::Dumper;
 use URI::Escape;
-use Scalar::Util qw(reftype);
+use Scalar::Util qw(blessed reftype);
 
 use RDF::Trine;
 use RDF::Trine::Node qw(ntriples_escape);
 
 our %ROUTE_TYPES;
 BEGIN {
-	MTA->mk_accessors(qw(base license source optional_files output split_size));
+	GTFS->mk_accessors(qw(base license source optional_files format split_size output));
 	%ROUTE_TYPES	= (
 		0	=> 'LightRail',
 		1	=> 'Subway',
@@ -496,37 +500,39 @@ sub finish_assertions {
 		my $turl	= $self->{trips}{$tid};
 		my $title	= $self->{trip_titles}{$tid};
 		my $timesurl	= sprintf( '%s/times', $turl );
-		print qq[<$turl> gtfs:has_stoptimes <$timesurl> .\n];
-		print qq[<$timesurl> rdfs:label "Trip times for $title" .\n];
+		my $string	= <<"END";
+<$turl> gtfs:has_stoptimes <$timesurl> .
+<$timesurl> rdfs:label "Trip times for $title" .
+END
 		my $count	= 1;
 		my $last;
 		foreach my $sid (sort { $a <=> $b } (keys %{ $self->{trip_stoptimes}{$tid} })) {
 			my $id	= $count++;
 			my $surl	= $self->{trip_stoptimes}{$tid}{$sid};
-			print qq[<$timesurl> rdf:_${id} <$surl> .\n];
+			$string	.= qq[<$timesurl> rdf:_${id} <$surl> .\n];
 			if (defined($last)) {
 				print qq[];
 			}
 			$last	= $surl;
 		}
+		$self->emit_turtle( $string );
 	}
-	print "\n";
 }
 
 sub emit_dataset {
 	my $self	= shift;
 	print "# dataset\n";
 	my $uri		= $self->dataset_uri;
-	print <<"END";
+	my $string	= <<"END";
 <$uri> a void:Dataset ;
 	dcterms:subject <http://dbpedia.org/resource/Transport> ;
 	void:vocabulary <http://myrdf.us/gtfs/vocab/> ;
 END
 	if (my $uri = $self->license) {
-		print qq[\tdcterms:license <$uri> ;\n];
+		$string	.= qq[\tdcterms:license <$uri> ;\n];
 	}
 	if (my $uri = $self->source) {
-		print qq[\tdcterms:source <$uri> ;\n];
+		$string	.= qq[\tdcterms:source <$uri> ;\n];
 	}
 	
 	if (reftype($self->{trip_stoptimes}) eq 'HASH') {
@@ -535,14 +541,39 @@ END
 		if (reftype($stops) eq 'HASH') {
 			my ($sid)	= keys %{ $stops };
 			my $ex		= $self->{trip_stoptimes}{ $rid }{ $sid };
-			print qq[\tvoid:exampleResource <$ex> ;\n];
+			$string	.= qq[\tvoid:exampleResource <$ex> ;\n];
 		}
 	}
 	
-	print qq[\t.\n\n];
+	$string	.= qq[\t.\n\n];
+	$self->emit_turtle( $string );
 }
 
 ################################################################################
+
+sub output_fh {
+	my $self	= shift;
+	Carp::confess unless (blessed($self));
+	my $o		= $self->output;
+	if ($o eq '-') {
+		return \*STDOUT;
+	}
+	
+	my $f		= $self->format;
+	my $suffix	= ($f eq 'turtle') ? 'ttl' : 'nt';
+	my $filename	= sprintf( "%s.%s.%s", $o, $self->{output_counter}, $suffix );
+	if ($self->{fh} and $filename eq $self->{fh_name}) {
+		return $self->{fh};
+	} else {
+		if ($self->{fh}) {
+			close($self->{fh});
+		}
+		open( my $fh, '>', $filename );
+		$self->{fh}	= $fh;
+		$self->{fh_name}	= $filename;
+		return $fh;
+	}
+}
 
 sub emit_turtle {
 	my $self	= shift;
@@ -552,30 +583,40 @@ sub emit_turtle {
 		$self->{split_records}	= 0;
 	}
 	
-	my $o		= $self->output;
+	unless (exists($self->{output_counter})) {
+		$self->{output_counter}	= 'a';
+	}
+	
+	my $o	= $self->output;
 	if (my $size = $self->split_size) {
 		if ($self->{split_records} >= $size) {
-			print "----------\n";
+			$self->{output_counter}++;
+			if ($o eq '-') {
+				print "----------\n";
+			}
 			$self->{split_records}	= 0;
 		}
 	}
+
+	my $f		= $self->format;
+	my $fh		= $self->output_fh;
 	
 	unless ($self->{split_records}) {
-		if ($o eq 'turtle') {
-			print $self->namespaces;
+		if ($f eq 'turtle') {
+			print {$fh} $self->namespaces;
 		}
 	}
 	
 	$self->{split_records}++;
-	if ($o eq 'turtle') {
-		print $turtle;
+	if ($f eq 'turtle') {
+		print {$fh} $turtle;
 	} else {
 		my $model	= RDF::Trine::Model->temporary_model;
 		my $parser	= RDF::Trine::Parser->new( 'turtle' );
 		my $rdf		= $self->namespaces . $turtle;
 		$parser->parse_into_model( $self->base . '/', $rdf, $model );
 		my $serializer = RDF::Trine::Serializer::NTriples->new();
-		$serializer->serialize_model_to_file( \*STDOUT, $model );
+		$serializer->serialize_model_to_file( $fh, $model );
 	}
 }
 
