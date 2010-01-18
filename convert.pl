@@ -86,7 +86,9 @@ use Text::CSV;
 use Data::Dumper;
 use URI::Escape;
 use Scalar::Util qw(reftype);
+
 use RDF::Trine;
+use RDF::Trine::Node qw(ntriples_escape);
 
 our %ROUTE_TYPES;
 BEGIN {
@@ -199,10 +201,10 @@ sub emit_agency {
 		}
 	}
 	
-	my $name	= $row{ 'agency_name' };
+	my $name	= ntriples_escape( $row{ 'agency_name' } );
 	my $url		= $row{ 'agency_url' };
-	my $tz		= $row{ 'agency_timezone' };
-	my $id		= $self->_make_id( agency_name => $name );
+	my $tz		= ntriples_escape( $row{ 'agency_timezone' } );
+	my $id		= $self->_make_id( agency_name => $row{ 'agency_name' } );
 	
 	my $uri		= sprintf('%s/agency/%s', $self->base, uri_escape($id));
 	
@@ -273,8 +275,9 @@ sub emit_routes {
 	}
 	
 	my $rid		= $row{ 'route_id' };
-	my $short	= $row{ 'route_short_name' };
-	my $long	= $row{ 'route_long_name' };
+	my $rids	= ntriples_escape( $rid );
+	my $short	= ntriples_escape( $row{ 'route_short_name' } );
+	my $long	= ntriples_escape( $row{ 'route_long_name' } );
 	my $type	= 0+$row{ 'route_type' };
 	my $typeQName	= $ROUTE_TYPES{ $type };
 	unless ($typeQName) {
@@ -289,7 +292,7 @@ sub emit_routes {
 	
 	my $string	= <<"END";
 <$uri> a gtfs:Route ;
-	dcterms:identifier "$rid" ;
+	dcterms:identifier "$rids" ;
 	gtfs:route_type gtfs:$typeQName ;
 	rdfs:label "$name" ;
 END
@@ -339,16 +342,19 @@ sub emit_trips {
 		}
 	}
 	
-	my $rid		= $row{ 'route_id' };
-	my $sid		= $row{ 'service_id' };
-	my $tid		= $row{ 'trip_id' };
-	my $headsign	= $row{'trip_headsign'};
+	my $rid			= $row{ 'route_id' };
+	my $rids		= ntriples_escape( $rid );
+	my $sid			= $row{ 'service_id' };
+	my $sids		= ntriples_escape( $sid );
+	my $tid			= $row{ 'trip_id' };
+	my $tids		= ntriples_escape( $tid );
+	my $headsign	= ntriples_escape( $row{'trip_headsign'} );
 	
 	my $ruri	= $self->{routes}{$rid} or throw Error -text => "Unknown route id $rid";
 	push(@{ $self->{trip_route}{$tid} }, $rid);
 	
 	my $tripnum	= ($tid =~ /\D/) ? $tid : "#$tid";
-	my $desc	= "Route $rid, $sid service, $tripnum";
+	my $desc	= ntriples_escape( "Route $rid, $sid service, $tripnum" );
 	
 	my $uri		= sprintf('%s/service/%s/%s', $ruri, uri_escape($sid), uri_escape($tid));
 	$self->{trips}{$tid}	= $uri;
@@ -359,13 +365,13 @@ sub emit_trips {
 <$uri> a gtfs:Trip ;
 	rdfs:label "$desc" ;
 	gtfs:route <$ruri> ;
-	gtfs:route_id "$rid" ;
-	gtfs:service_id "$sid" ;
-	gtfs:trip_id "$tid" ;
+	gtfs:route_id "$rids" ;
+	gtfs:service_id "$sids" ;
+	gtfs:trip_id "$tids" ;
 END
 
 	if (my $data = $self->{trip_frequencies}{$tid}) {
-		my ($start, $end, $secs)	= @$data;
+		my ($start, $end, $secs)	= map { ntriples_escape($_) } @$data;
 		$string	.= <<"END";
 	gtfs:start_time "$start" ;
 	gtfs:end_time "$end" ;
@@ -393,10 +399,11 @@ sub emit_stops {
 	}
 	
 	my $sid		= $row{ 'stop_id' };
-	my $name	= $row{ 'stop_name' };
+	my $sids	= ntriples_escape( $sid );
+	my $name	= ntriples_escape( $row{ 'stop_name' } );
 	my $lat		= $row{ 'stop_lat' };
 	my $lon		= $row{ 'stop_lon' };
-	my $id		= $self->_make_id( stop_name => $name );
+	my $id		= $self->_make_id( stop_name => $row{ 'stop_name' } );
 	
 	my $uri		= sprintf('%s/stop/%s', $self->base, uri_escape($id));
 	$self->{stops}{$sid}	= $uri;
@@ -405,7 +412,7 @@ sub emit_stops {
 	my $type	= ($row{'location_type'}) ? 'Station' : 'Stop';
 	my $string	= <<"END";
 <$uri> a gtfs:${type} ;
-	dcterms:identifier "$sid" ;
+	dcterms:identifier "$sids" ;
 	rdfs:label "$name" ;
 	geo:lat $lat ;
 	geo:long $lon ;
@@ -430,9 +437,11 @@ sub emit_stop_times {
 	}
 	
 	my $tid		= $row{ 'trip_id' };
-	my $arr		= $row{ 'arrival_time' };
-	my $dep		= $row{ 'departure_time' };
+	my $tids	= ntriples_escape( $tid );
+	my $arr		= ntriples_escape( $row{ 'arrival_time' } );
+	my $dep		= ntriples_escape( $row{ 'departure_time' } );
 	my $sid		= $row{ 'stop_id' };
+	my $sids	= ntriples_escape( $sid );
 	my $seq		= $row{ 'stop_sequence' };
 	
 	my $suri	= $self->{stops}{$sid};
