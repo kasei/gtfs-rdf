@@ -86,6 +86,7 @@ use Text::CSV;
 use Data::Dumper;
 use URI::Escape;
 use Scalar::Util qw(reftype);
+use RDF::Trine;
 
 our %ROUTE_TYPES;
 BEGIN {
@@ -117,10 +118,10 @@ sub run {
 	$self->emit_dataset();
 }
 
-sub init {
+sub namespaces {
 	my $self	= shift;
 	my $base	= $self->base;
-	printf(<<'END', $base);
+	return sprintf(<<'END', $base);
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix dc: <http://purl.org/dc/elements/1.1/> .
@@ -129,9 +130,14 @@ sub init {
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
-@prefix : <http://myrdf.us/gtfs/vocab/> .
+@prefix gtfs: <http://myrdf.us/gtfs/vocab/> .
 
 END
+END
+}
+
+sub init {
+	my $self	= shift;
 }
 
 sub check_files {
@@ -205,13 +211,14 @@ sub emit_agency {
 		$self->{agency}{$aid}	= $uri;
 	}
 	
-	print <<"END";
-<$uri> a :Agency ;
+	my $string	= <<"END";
+<$uri> a gtfs:Agency ;
 	dc:title "$name" ;
 	foaf:homepage <$url> ;
-	:timezone "$tz" .
+	gtfs:timezone "$tz" .
 
 END
+	$self->emit_turtle( $string );
 }
 
 ################################################################################
@@ -237,20 +244,21 @@ sub emit_calendar {
 	my $end		= _date( $row{ 'end_date' } );
 	
 	my $uri		= sprintf('%s/service/%s', $self->base, uri_escape($sid));
-	print <<"END";
-<$uri> a :Service ;
-	:start_date $start ;
-	:end_date $end ;
-	:monday $mon ;
-	:tuesday $tue ;
-	:wednesday $wed ;
-	:thursday $thu ;
-	:friday $fri ;
-	:saturday $sat ;
-	:sunday $sun ;
+	my $string	= <<"END";
+<$uri> a gtfs:Service ;
+	gtfs:start_date $start ;
+	gtfs:end_date $end ;
+	gtfs:monday $mon ;
+	gtfs:tuesday $tue ;
+	gtfs:wednesday $wed ;
+	gtfs:thursday $thu ;
+	gtfs:friday $fri ;
+	gtfs:saturday $sat ;
+	gtfs:sunday $sun ;
 	.
 
 END
+	$self->emit_turtle( $string );
 }
 
 ################################################################################
@@ -279,25 +287,26 @@ sub emit_routes {
 	my $uri		= sprintf('%s/route/%s', $self->base, uri_escape($id));
 	$self->{routes}{$rid}	= $uri;
 	
-	print <<"END";
-<$uri> a :Route ;
+	my $string	= <<"END";
+<$uri> a gtfs:Route ;
 	dcterms:identifier "$rid" ;
-	:route_type :$typeQName ;
+	gtfs:route_type gtfs:$typeQName ;
 	rdfs:label "$name" ;
 END
-	print qq[\tdc:title "$short" ;\n] if ($short);
-	print qq[\tdc:description "$long" ;\n] if ($long);
+	$string	.= qq[\tdc:title "$short" ;\n] if ($short);
+	$string	.= qq[\tdc:description "$long" ;\n] if ($long);
 	
 	if (exists $row{ 'agency_id' }) {
 		my $aid		= $row{ 'agency_id' };
 		my $aurl	= $self->{agency}{$aid};
-		print qq[\t:agency <$aurl> ;];
+		$string	.= qq[\tgtfs:agency <$aurl> ;];
 	}
 	if (my $url = $row{ 'route_url' }) {
-		print qq[\tfoaf:homepage <$url> ;];
+		$string	.= qq[\tfoaf:homepage <$url> ;];
 	}
 
-	print qq[\t.\n\n];
+	$string	.= qq[\t.\n\n];
+	$self->emit_turtle( $string );
 }
 
 ################################################################################
@@ -346,28 +355,29 @@ sub emit_trips {
 	$self->{trip_titles}{$tid}	= $desc;
 	$self->{route_trips}{$rid}{$tid}	= $uri;
 	
-	print <<"END";
-<$uri> a :Trip ;
+	my $string	= <<"END";
+<$uri> a gtfs:Trip ;
 	rdfs:label "$desc" ;
-	:route <$ruri> ;
-	:route_id "$rid" ;
-	:service_id "$sid" ;
-	:trip_id "$tid" ;
+	gtfs:route <$ruri> ;
+	gtfs:route_id "$rid" ;
+	gtfs:service_id "$sid" ;
+	gtfs:trip_id "$tid" ;
 END
 
 	if (my $data = $self->{trip_frequencies}{$tid}) {
 		my ($start, $end, $secs)	= @$data;
-		print <<"END";
-	:start_time "$start" ;
-	:end_time "$end" ;
-	:headway_seconds "$secs" ;
+		$string	.= <<"END";
+	gtfs:start_time "$start" ;
+	gtfs:end_time "$end" ;
+	gtfs:headway_seconds "$secs" ;
 END
 	}
 	
 	if ($headsign) {
-		print qq[\t:trip_headsign "$headsign" ;\n];
+		$string	.= qq[\tgtfs:trip_headsign "$headsign" ;\n];
 	}
-	print qq[\t.\n\n];
+	$string	.= qq[\t.\n\n];
+	$self->emit_turtle( $string );
 }
 
 ################################################################################
@@ -393,18 +403,19 @@ sub emit_stops {
 	$self->{stop_titles}{$sid}	= $name;
 	
 	my $type	= ($row{'location_type'}) ? 'Station' : 'Stop';
-	print <<"END";
-<$uri> a :${type} ;
+	my $string	= <<"END";
+<$uri> a gtfs:${type} ;
 	dcterms:identifier "$sid" ;
 	rdfs:label "$name" ;
 	geo:lat $lat ;
 	geo:long $lon ;
 END
 	if (my $url = $row{ 'stop_url' }) {
-		print qq[\tfoaf:homepage <$url> ;];
+		$string	.= qq[\tfoaf:homepage <$url> ;];
 	}
 	
-	print qq[\t.\n\n];
+	$string	.= qq[\t.\n\n];
+	$self->emit_turtle( $string );
 }
 
 ################################################################################
@@ -438,21 +449,22 @@ sub emit_stop_times {
 	
 	$self->{trip_stoptimes}{$tid}{$seq}	= $uri;
 	
-	print <<"END";
-<$uri> a :StopTime ;
+	my $string	= <<"END";
+<$uri> a gtfs:StopTime ;
 	rdfs:label "$stop_title, $trip_title, dep $dep" ;
-	:trip <$turi> ;
-	:stop <$suri> ;
-	:stop_sequence $seq ;
+	gtfs:trip <$turi> ;
+	gtfs:stop <$suri> ;
+	gtfs:stop_sequence $seq ;
 END
 	
 	unless ($self->{trip_frequencies}{$tid}) {
-		print <<"END";
-	:arrival_time "$arr" ;
-	:departure_time "$dep" ;
+		$string	.= <<"END";
+	gtfs:arrival_time "$arr" ;
+	gtfs:departure_time "$dep" ;
 END
 	}
-	print qq[\t;\n\n];
+	$string	.= qq[\t.\n\n];
+	$self->emit_turtle( $string );
 }
 
 ################################################################################
@@ -464,8 +476,8 @@ sub finish_assertions {
 		my $surl	= $self->{stops}{$sid};
 		foreach my $rid (keys %{ $self->{stop_routes}{$sid} }) {
 			my $rurl	= $self->{stop_routes}{$sid}{$rid};
-			print qq[<$surl> :has_route <$rurl> .\n];
-			print qq[<$rurl> :has_stop <$surl> .\n];
+			print qq[<$surl> gtfs:has_route <$rurl> .\n];
+			print qq[<$rurl> gtfs:has_stop <$surl> .\n];
 		}
 	}
 	
@@ -474,7 +486,7 @@ sub finish_assertions {
 		my $rurl	= $self->{routes}{$rid};
 		foreach my $tid (keys %{ $self->{route_trips}{$rid} }) {
 			my $turl	= $self->{route_trips}{$rid}{$tid};
-			print qq[<$rurl> :has_trip <$turl> .\n];
+			print qq[<$rurl> gtfs:has_trip <$turl> .\n];
 		}
 	}
 	
@@ -483,7 +495,7 @@ sub finish_assertions {
 		my $turl	= $self->{trips}{$tid};
 		my $title	= $self->{trip_titles}{$tid};
 		my $timesurl	= sprintf( '%s/times', $turl );
-		print qq[<$turl> :has_stoptimes <$timesurl> .\n];
+		print qq[<$turl> gtfs:has_stoptimes <$timesurl> .\n];
 		print qq[<$timesurl> rdfs:label "Trip times for $title" .\n];
 		my $count	= 1;
 		my $last;
@@ -530,6 +542,17 @@ END
 }
 
 ################################################################################
+
+sub emit_turtle {
+	my $self	= shift;
+	my $turtle	= shift;
+	my $model	= RDF::Trine::Model->temporary_model;
+	my $parser	= RDF::Trine::Parser->new( 'turtle' );
+	my $rdf		= $self->namespaces . $turtle;
+	$parser->parse_into_model( $self->base . '/', $rdf, $model );
+	my $serializer = RDF::Trine::Serializer::NTriples->new();
+	$serializer->serialize_model_to_file( \*STDOUT, $model );
+}
 
 sub dataset_uri {
 	my $self	= shift;
