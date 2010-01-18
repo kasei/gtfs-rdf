@@ -365,9 +365,9 @@ sub emit_trips {
 	my $uri		= sprintf('%s/service/%s/%s', $ruri, uri_escape($sid), uri_escape($tid));
 	$self->{trips}{$tid}	= $uri;
 	$self->{trip_titles}{$tid}	= $desc;
-	$self->{route_trips}{$rid}{$tid}	= $uri;
 	
 	my $string	= <<"END";
+<$ruri> gtfs:has_trip <$uri> .
 <$uri> a gtfs:Trip ;
 	rdfs:label "$desc" ;
 	gtfs:route <$ruri> ;
@@ -458,8 +458,11 @@ sub emit_stop_times {
 	my $trip_title	= $self->{trip_titles}{$tid};
 	my @rids	= @{ $self->{trip_route}{$tid} };
 	foreach my $rid (@rids) {
-		my $rurl	= $self->{routes}{$rid};
-		$self->{stop_routes}{$sid}{$rid}	= $rurl;
+		my $ruri	= $self->{routes}{$rid};
+		$self->emit_turtle( <<"END" );
+<$suri> gtfs:has_route <$ruri> .
+<$ruri> gtfs:has_stop <$suri> .
+END
 	}
 	
 	$self->{trip_stoptimes}{$tid}{$seq}	= $uri;
@@ -486,26 +489,6 @@ END
 
 sub finish_assertions {
 	my $self	= shift;
-	# Stop :has_route Route
-	print "# back filling stops to routes\n";
-	foreach my $sid (keys %{ $self->{stops} }) {
-		my $surl	= $self->{stops}{$sid};
-		foreach my $rid (keys %{ $self->{stop_routes}{$sid} }) {
-			my $rurl	= $self->{stop_routes}{$sid}{$rid};
-			print qq[<$surl> gtfs:has_route <$rurl> .\n];
-			print qq[<$rurl> gtfs:has_stop <$surl> .\n];
-		}
-	}
-	
-	# Route has_trip Trip
-	print "# back filling routes to trips\n";
-	foreach my $rid (keys %{ $self->{routes} }) {
-		my $rurl	= $self->{routes}{$rid};
-		foreach my $tid (keys %{ $self->{route_trips}{$rid} }) {
-			my $turl	= $self->{route_trips}{$rid}{$tid};
-			print qq[<$rurl> gtfs:has_trip <$turl> .\n];
-		}
-	}
 	
 	# Trip has_stoptimes [ StopTime, StopTime, ... ]
 	print "# back filling trips to stoptimes\n";
