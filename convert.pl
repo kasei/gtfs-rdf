@@ -31,10 +31,14 @@ unless (@ARGV) {
 }
 
 my ($lic, $base, $source);
+my $split	= 0;
+my $output	= 'turtle';
 my $result	= GetOptions(
 				"base=s"	=> \$base,
 				"license=s"	=> \$lic,
 				"source=s"	=> \$source,
+				"output=s"	=> \$output,
+				"split_size=i"	=> \$split,
 			);
 
 my %args;
@@ -47,6 +51,8 @@ if ($base) {
 
 $args{license}	= $lic if ($lic);
 $args{source}	= $source if ($source);
+$args{split_size}	= $split if ($split);
+$args{output}	= $output;
 
 my $m		= MTA->new({%args});
 
@@ -92,7 +98,7 @@ use RDF::Trine::Node qw(ntriples_escape);
 
 our %ROUTE_TYPES;
 BEGIN {
-	MTA->mk_accessors(qw(base license source optional_files));
+	MTA->mk_accessors(qw(base license source optional_files output split_size));
 	%ROUTE_TYPES	= (
 		0	=> 'LightRail',
 		1	=> 'Subway',
@@ -285,7 +291,7 @@ sub emit_routes {
 	}
 	
 	my $name	= $short || $long;
-	my $id		= $self->_make_id( route_name => $name );
+	my $id		= $self->_make_id( route_name => join('-',$rid,$name) );
 	
 	my $uri		= sprintf('%s/route/%s', $self->base, uri_escape($id));
 	$self->{routes}{$rid}	= $uri;
@@ -481,6 +487,7 @@ END
 sub finish_assertions {
 	my $self	= shift;
 	# Stop :has_route Route
+	print "# back filling stops to routes\n";
 	foreach my $sid (keys %{ $self->{stops} }) {
 		my $surl	= $self->{stops}{$sid};
 		foreach my $rid (keys %{ $self->{stop_routes}{$sid} }) {
@@ -491,6 +498,7 @@ sub finish_assertions {
 	}
 	
 	# Route has_trip Trip
+	print "# back filling routes to trips\n";
 	foreach my $rid (keys %{ $self->{routes} }) {
 		my $rurl	= $self->{routes}{$rid};
 		foreach my $tid (keys %{ $self->{route_trips}{$rid} }) {
@@ -500,6 +508,7 @@ sub finish_assertions {
 	}
 	
 	# Trip has_stoptimes [ StopTime, StopTime, ... ]
+	print "# back filling trips to stoptimes\n";
 	foreach my $tid (keys %{ $self->{trip_stoptimes} }) {
 		my $turl	= $self->{trips}{$tid};
 		my $title	= $self->{trip_titles}{$tid};
@@ -555,12 +564,36 @@ END
 sub emit_turtle {
 	my $self	= shift;
 	my $turtle	= shift;
-	my $model	= RDF::Trine::Model->temporary_model;
-	my $parser	= RDF::Trine::Parser->new( 'turtle' );
-	my $rdf		= $self->namespaces . $turtle;
-	$parser->parse_into_model( $self->base . '/', $rdf, $model );
-	my $serializer = RDF::Trine::Serializer::NTriples->new();
-	$serializer->serialize_model_to_file( \*STDOUT, $model );
+	
+	unless (exists($self->{split_records})) {
+		$self->{split_records}	= 0;
+	}
+	
+	my $o		= $self->output;
+	if (my $size = $self->split_size) {
+		if ($self->{split_records} >= $size) {
+			print "----------\n";
+			$self->{split_records}	= 0;
+		}
+	}
+	
+	unless ($self->{split_records}) {
+		if ($o eq 'turtle') {
+			print $self->namespaces;
+		}
+	}
+	
+	$self->{split_records}++;
+	if ($o eq 'turtle') {
+		print $turtle;
+	} else {
+		my $model	= RDF::Trine::Model->temporary_model;
+		my $parser	= RDF::Trine::Parser->new( 'turtle' );
+		my $rdf		= $self->namespaces . $turtle;
+		$parser->parse_into_model( $self->base . '/', $rdf, $model );
+		my $serializer = RDF::Trine::Serializer::NTriples->new();
+		$serializer->serialize_model_to_file( \*STDOUT, $model );
+	}
 }
 
 sub dataset_uri {
