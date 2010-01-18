@@ -21,34 +21,55 @@ This will create RDF with URIs such as:
 use strict;
 use warnings;
 
+use Getopt::Long;
 use Data::Dumper;
 use Error qw(:try);
 
 unless (@ARGV) {
-	print <<"END";
-Usage: $0 base-uri
+	help();
+	exit;
+}
 
-base-uri should be the base URI used in constructing linked-data capable
-instance URIs. It will be appended with fragments starting with '/', so it
-should not end with a slash.
+my ($lic, $base, $source);
+my $result	= GetOptions(
+				"base=s"	=> \$base,
+				"license=s"	=> \$lic,
+				"source=s"	=> \$source,
+			);
+
+my %args;
+if ($base) {
+	$args{base}	= $base;
+} else {
+	help();
+	exit;
+}
+
+$args{license}	= $lic if ($lic);
+$args{source}	= $source if ($source);
+
+my $m		= MTA->new({%args});
+
+$m->run();
+
+exit;
+
+sub help {
+	print <<"END";
+Usage: $0 -base uri -license url
+
+The base URI is used in constructing linked-data capable instance URIs. It will
+be appended with fragments starting with '/', so it should not end with a slash.
 
 Example:
 
-perl $0 http://myrdf.us/mta/mnr
+perl $0 -base http://myrdf.us/mta/mnr
 
 This will create RDF with URIs such as:
 http://myrdf.us/mta/mnr/stop/grand_central_terminal
 
 END
-	exit;
 }
-
-my $base	= shift;
-my $m		= MTA->new({base => $base});
-
-$m->run();
-
-exit;
 
 ################################################################################
 ################################################################################
@@ -60,13 +81,15 @@ package MTA;
 use strict;
 use warnings;
 use base qw(Class::Accessor);
+
 use Text::CSV;
 use Data::Dumper;
 use URI::Escape;
+use Scalar::Util qw(reftype);
 
 our %ROUTE_TYPES;
 BEGIN {
-	MTA->mk_accessors(qw(base optional_files));
+	MTA->mk_accessors(qw(base license source optional_files));
 	%ROUTE_TYPES	= (
 		0	=> 'LightRail',
 		1	=> 'Subway',
@@ -86,10 +109,12 @@ sub run {
 	$self->parse( 'calendar' );
 	$self->parse( 'agency' );
 	$self->parse( 'routes' );
+	$self->parse( 'frequencies' );
 	$self->parse( 'trips' );
 	$self->parse( 'stops' );
 	$self->parse( 'stop_times' );
-	$self->finish();
+	$self->finish_assertions();
+	$self->emit_dataset();
 }
 
 sub init {
@@ -100,6 +125,7 @@ sub init {
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix dc: <http://purl.org/dc/elements/1.1/> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix void: <http://rdfs.org/ns/void#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
@@ -173,6 +199,12 @@ sub emit_agency {
 	my $id		= $self->_make_id( agency_name => $name );
 	
 	my $uri		= sprintf('%s/agency/%s', $self->base, uri_escape($id));
+	
+	if (exists $row{ 'agency_id' }) {
+		my $aid	= $row{ 'agency_id' };
+		$self->{agency}{$aid}	= $uri;
+	}
+	
 	print <<"END";
 <$uri> a :Agency ;
 	dc:title "$name" ;
@@ -235,7 +267,7 @@ sub emit_routes {
 	my $rid		= $row{ 'route_id' };
 	my $short	= $row{ 'route_short_name' };
 	my $long	= $row{ 'route_long_name' };
-	my $type	= $row{ 'route_type' };
+	my $type	= 0+$row{ 'route_type' };
 	my $typeQName	= $ROUTE_TYPES{ $type };
 	unless ($typeQName) {
 		throw Error -text => "Unknown route type '$type'";
@@ -255,12 +287,36 @@ sub emit_routes {
 END
 	print qq[\tdc:title "$short" ;\n] if ($short);
 	print qq[\tdc:description "$long" ;\n] if ($long);
-
+	
+	if (exists $row{ 'agency_id' }) {
+		my $aid		= $row{ 'agency_id' };
+		my $aurl	= $self->{agency}{$aid};
+		print qq[\t:agency <$aurl> ;];
+	}
 	if (my $url = $row{ 'route_url' }) {
 		print qq[\tfoaf:homepage <$url> ;];
 	}
 
 	print qq[\t.\n\n];
+}
+
+################################################################################
+
+sub emit_frequencies {
+	my $self	= shift;
+	my %row		= @_;
+	foreach (qw(trip_id start_time end_time headway_secs)) {
+		unless (exists $row{$_}) {
+			throw Error -text => "Missing frequencies field $_";
+		}
+	}
+	
+	my $tid		= $row{ 'trip_id' };
+	my $start	= $row{ 'start_time' };
+	my $end		= $row{ 'end_time' };
+	my $secs	= $row{ 'headway_secs' };
+	
+	$self->{trip_frequencies}{$tid}	= [$start, $end, $secs];
 }
 
 ################################################################################
@@ -298,6 +354,16 @@ sub emit_trips {
 	:service_id "$sid" ;
 	:trip_id "$tid" ;
 END
+
+	if (my $data = $self->{trip_frequencies}{$tid}) {
+		my ($start, $end, $secs)	= @$data;
+		print <<"END";
+	:start_time "$start" ;
+	:end_time "$end" ;
+	:headway_seconds "$secs" ;
+END
+	}
+	
 	if ($headsign) {
 		print qq[\t:trip_headsign "$headsign" ;\n];
 	}
@@ -326,14 +392,14 @@ sub emit_stops {
 	$self->{stops}{$sid}	= $uri;
 	$self->{stop_titles}{$sid}	= $name;
 	
+	my $type	= ($row{'location_type'}) ? 'Station' : 'Stop';
 	print <<"END";
-<$uri> a :Stop ;
+<$uri> a :${type} ;
 	dcterms:identifier "$sid" ;
 	rdfs:label "$name" ;
 	geo:lat $lat ;
 	geo:long $lon ;
 END
-	
 	if (my $url = $row{ 'stop_url' }) {
 		print qq[\tfoaf:homepage <$url> ;];
 	}
@@ -376,17 +442,22 @@ sub emit_stop_times {
 <$uri> a :StopTime ;
 	rdfs:label "$stop_title, $trip_title, dep $dep" ;
 	:trip <$turi> ;
+	:stop <$suri> ;
+	:stop_sequence $seq ;
+END
+	
+	unless ($self->{trip_frequencies}{$tid}) {
+		print <<"END";
 	:arrival_time "$arr" ;
 	:departure_time "$dep" ;
-	:stop <$suri> ;
-	:stop_sequence $seq .
-
 END
+	}
+	print qq[\t;\n\n];
 }
 
 ################################################################################
 
-sub finish {
+sub finish_assertions {
 	my $self	= shift;
 	# Stop :has_route Route
 	foreach my $sid (keys %{ $self->{stops} }) {
@@ -426,9 +497,44 @@ sub finish {
 			$last	= $surl;
 		}
 	}
+	print "\n";
+}
+
+sub emit_dataset {
+	my $self	= shift;
+	print "# dataset\n";
+	my $uri		= $self->dataset_uri;
+	print <<"END";
+<$uri> a void:Dataset ;
+	dcterms:subject <http://dbpedia.org/resource/Transport> ;
+	void:vocabulary <http://myrdf.us/gtfs/vocab/> ;
+END
+	if (my $uri = $self->license) {
+		print qq[\tdcterms:license <$uri> ;\n];
+	}
+	if (my $uri = $self->source) {
+		print qq[\tdcterms:source <$uri> ;\n];
+	}
+	
+	if (reftype($self->{trip_stoptimes}) eq 'HASH') {
+		my ($rid)	= keys %{ $self->{trip_stoptimes} };
+		my $stops	= $self->{trip_stoptimes}{ $rid };
+		if (reftype($stops) eq 'HASH') {
+			my ($sid)	= keys %{ $stops };
+			my $ex		= $self->{trip_stoptimes}{ $rid }{ $sid };
+			print qq[\tvoid:exampleResource <$ex> ;\n];
+		}
+	}
+	
+	print qq[\t.\n\n];
 }
 
 ################################################################################
+
+sub dataset_uri {
+	my $self	= shift;
+	return sprintf('%s/dataset', $self->base);
+}
 
 sub _bool {
 	my $value	= shift;

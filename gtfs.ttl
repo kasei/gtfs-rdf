@@ -4,6 +4,11 @@
 @prefix dc: <http://purl.org/dc/elements/1.1/> .
 @prefix gtfs: <http://myrdf.us/gtfs/vocab/> .
 
+gtfs:agency a rdf:Property ;
+	rdfs:domain gtfs:Route ;
+	rdfs:range gtfs:Agency ;
+	rdfs:label "Agency" .
+
 gtfs:arrival_time a rdf:Property ;
 	rdfs:label "Arrival Time" .
 
@@ -99,8 +104,18 @@ gtfs:tuesday a rdf:Property ;
 gtfs:wednesday a rdf:Property ;
 	rdfs:label "Wednesday" .
 
-gtfs:RouteType a rdfs:Class .
+gtfs:start_time a rdf:Property ;
+	rdfs:domain gtfs:StopTime ;
+	rdfs:label "Start Time" .
+gtfs:end_time a rdf:Property ;
+	rdfs:domain gtfs:StopTime ;
+	rdfs:label "End Time" .
+gtfs:headway_seconds a rdf:Property ;
+	rdfs:label "Headway Seconds" .
 
+
+
+gtfs:RouteType a rdfs:Class .
 gtfs:LightRail a gtfs:RouteType ;
 	rdfs:label "Tram, Streetcar, Light rail" ;
 	dc:description "Any light rail or street level system within a metropolitan area." .
@@ -134,6 +149,9 @@ gtfs:Service a rdfs:Class ;
 	rdfs:label "Service" .
 gtfs:Stop a rdfs:Class ;
 	rdfs:label "Stop" .
+gtfs:Station  a rdfs:Class ;
+	rdfs:subClassOf gtfs:Stop ;
+	rdfs:label "Station" .
 gtfs:StopTime a rdfs:Class ;
 	rdfs:label "StopTime" .
 gtfs:Trip a rdfs:Class ;
